@@ -1,0 +1,12 @@
+# Maxfiy fayllar
+bot_token.txt
+.env
+
+# Ma'lumotlar bazasi
+*.db
+
+# Yuklangan va vaqtinchalik fayllar
+downloads/
+promo_assets/
+__pycache__/
+*.pyc
