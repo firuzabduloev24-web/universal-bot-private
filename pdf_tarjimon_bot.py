@@ -6,27 +6,6 @@
 =============================================================================
 Bosh administrator: @usman_khasan (Telegram ID: 1021089367)
 Bot Token: 8925389899:AAFL5NzM5bIu0eK8yVNCi_Fpj-QNPKL7J5c
-
-YANGI IMKONIYATLAR:
-1. 🎯 Interaktiv Til Tanlash (Fayl va Matn uchun):
-   - Foydalanuvchi PDF fayl yuborganda, bot avval sahifalar sonini ko'rsatib:
-     «Qaysi tilga tarjima qilib beray?» deb asosiy 5 ta til tugmasini chiqaradi!
-   - Chatga oddiy matn yozib yuborganda ham avval tilni so'rab, tanlangan tilga o'girib beradi!
-2. 🔍 100% Gibrid Matn Ajratish (Digital + OCR Engine):
-   - Raqamli PDF lardan matnni tezkor o'qish (pypdf).
-   - Skaner qilingan, tibbiy xulosalar (PATHOLOGY.pdf, IPSUM.pdf), kitoblar va
-     hujjat fotosuratlaridan matnni 100% aniqlikda o'qish (pypdfium2 + Tesseract OCR).
-3. 📄 Hujjat Formatlari:
-   - Yangi A4 PDF hujjat (ReportLab & Pure-Python).
-   - Tahrirlanadigan Word (.docx) varianti (python-docx).
-   - Qisqa matnlar uchun to'g'ridan-to'g'ri Telegram xabari.
-4. 🌐 Asosiy 5 ta Til:
-   - 🇺🇿 O'zbek tili
-   - 🇷🇺 Rus tili
-   - 🇬🇧 Ingliz tili
-   - 🇹🇷 Turk tili
-   - 🇩🇪 Nemis tili (va 🇸🇦 Arab tili)
-=============================================================================
 """
 
 import os
@@ -94,11 +73,9 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 DB_FILE = os.path.join(tempfile.gettempdir(), "pdf_translator.db")
 
-# Sessiyalar va Foydalanuvchi holatlari
-PENDING_SESSIONS = {} # session_id -> {type: 'pdf'/'text'/'photo', data...}
+PENDING_SESSIONS = {}
 USER_STATES = {}
 
-# Asosiy 5-6 ta til ro'yxati
 MAIN_LANGUAGES = {
     "uz": {"name": "O'zbek tiliga", "flag": "🇺🇿"},
     "ru": {"name": "Rus tiliga", "flag": "🇷🇺"},
@@ -203,22 +180,13 @@ def get_ocr_languages():
         return "eng"
 
 def extract_text_hybrid_pdf(pdf_path, max_pages=50, progress_callback=None):
-    """
-    Gibrid Matn Ajratuvchi (Digital + OCR):
-    - Har bir sahifani tekshiradi.
-    - Raqamli matn bo'lsa -> pypdf orqali bir zumda oladi.
-    - Skaner/Rasm bo'lsa (PATHOLOGY, IPSUM kabi) -> pypdfium2 bilan 2.2x rasmga aylantirib,
-      Tesseract OCR orqali 100% o'qiydi!
-    """
     pages_data = []
     ocr_used = False
 
-    # 1. Sahifalarni ochish
     pdf_doc = pypdfium2.PdfDocument(pdf_path)
     total_pages = len(pdf_doc)
     pages_to_process = min(total_pages, max_pages)
 
-    # 2. Raqamli qatlam uchun pypdf
     pypdf_reader = None
     try:
         pypdf_reader = pypdf.PdfReader(pdf_path)
@@ -235,7 +203,6 @@ def extract_text_hybrid_pdf(pdf_path, max_pages=50, progress_callback=None):
         if progress_callback:
             progress_callback(page_num, pages_to_process, is_ocr=False)
 
-        # 1-qadam: Raqamli matn olishga urinish
         if pypdf_reader and idx < len(pypdf_reader.pages):
             try:
                 extracted = pypdf_reader.pages[idx].extract_text()
@@ -244,7 +211,6 @@ def extract_text_hybrid_pdf(pdf_path, max_pages=50, progress_callback=None):
             except Exception:
                 pass
 
-        # 2-qadam: Agar matn yo'q bo'lsa -> Skaner / Rasm deb aniqlanadi va OCR ishga tushadi!
         if not page_text or len(page_text.strip()) <= 35:
             if progress_callback:
                 progress_callback(page_num, pages_to_process, is_ocr=True)
@@ -265,7 +231,6 @@ def extract_text_hybrid_pdf(pdf_path, max_pages=50, progress_callback=None):
                 logger.error(f"Sahifa {page_num} OCR xatosi: {ocr_err}")
                 page_text = ""
 
-        # Qatorlarni tozalash
         clean_lines = [line.strip() for line in page_text.splitlines() if line.strip()]
         cleaned_text = "\n".join(clean_lines)
 
@@ -279,7 +244,6 @@ def extract_text_hybrid_pdf(pdf_path, max_pages=50, progress_callback=None):
     return pages_data, ocr_used, total_pages
 
 def extract_text_from_photo(photo_path):
-    """Rasm (.jpg, .png) yuborilganda OCR orqali matnni o'qish"""
     if not HAS_PYTESSERACT:
         return "Tesseract OCR o'rnatilmagan."
     try:
@@ -293,7 +257,6 @@ def extract_text_from_photo(photo_path):
 
 # ==================== PROFESSIONAL TARJIMA TIZIMI ====================
 def translate_chunk_gtx(text, target_lang="uz", source_lang="auto"):
-    """Google Translate bepul GTX Web API"""
     if not text or not text.strip():
         return ""
     url = "https://translate.googleapis.com/translate_a/single"
@@ -315,7 +278,6 @@ def translate_chunk_gtx(text, target_lang="uz", source_lang="auto"):
     raise Exception(f"GTX status {r.status_code}")
 
 def translate_chunk_mymemory(text, target_lang="uz", source_lang="auto"):
-    """MyMemory API zaxirasi"""
     sl = "en" if source_lang == "auto" else source_lang
     pair = f"{sl}|{target_lang}"
     url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(text[:450])}&langpair={pair}"
@@ -328,18 +290,15 @@ def translate_chunk_mymemory(text, target_lang="uz", source_lang="auto"):
 def translate_single_chunk(chunk, target_lang="uz"):
     if not chunk or not chunk.strip():
         return ""
-    # 1. Deep Translator
     if HAS_DEEP_TRANSLATOR:
         try:
             return GoogleTranslator(source="auto", target=target_lang).translate(chunk)
         except Exception:
             pass
-    # 2. Google Translate GTX
     try:
         return translate_chunk_gtx(chunk, target_lang=target_lang)
     except Exception:
         pass
-    # 3. MyMemory
     try:
         return translate_chunk_mymemory(chunk, target_lang=target_lang)
     except Exception:
@@ -378,7 +337,7 @@ def translate_full_text(text, target_lang="uz"):
         time.sleep(0.1)
     return "\n\n".join(results)
 
-# ==================== HUJJAT GENERATSIYASI (DOCX VA PDF) ====================
+# ==================== HUJJAT GENERATSIYASI ====================
 def create_translated_docx(pages_data, output_path, original_filename, target_lang_name):
     if not HAS_DOCX:
         return False
@@ -511,7 +470,6 @@ def main_reply_keyboard():
     return markup
 
 def language_choice_keyboard(session_id: str):
-    """Asosiy 5-6 ta til tugmasi (Foydalanuvchi tanlashi uchun)"""
     markup = types.InlineKeyboardMarkup(row_width=2)
     buttons = []
     for code, info in MAIN_LANGUAGES.items():
@@ -528,15 +486,22 @@ def language_choice_keyboard(session_id: str):
 def handle_start(message):
     user = message.from_user
     db_add_user(user.id, user.username, user.first_name)
+    
+    # Telegram pastki chap burchagidagi ko'k "Menu" tugmasini faollashtirish:
+    try:
+        bot.set_chat_menu_button(message.chat.id, menu_button=types.MenuButtonCommands())
+    except Exception:
+        pass
+
     welcome_text = (
         f"Assalomu alaykum, <b>{user.first_name}</b>!\n\n"
-        f"🤖 <b>Smart PDF, Skaner (OCR) va Matn Tarjimon Botiga</b> xush kelibsiz!\n\n"
-        f"🔥 <b>Botning asosiy imkoniyatlari:</b>\n"
-        f"• 📄 <b>PDF Fayllar:</b> Oddiy elektron PDF hamda <b>skaner qilingan / rasm formatdagi</b> PDF (tibbiy xulosalar, analizlar `PATHOLOGY`, `IPSUM`, kitoblar) larni <b>100% OCR</b> orqali o'qish!\n"
-        f"• 💬 <b>Oddiy Matnlar:</b> Chatga istalgan matn yozsangiz, qaysi tilga tarjima qilishni so'rab darhol o'girib beradi!\n"
-        f"• 📸 <b>Hujjat Rasmlari:</b> Suratga olingan hujjatlarni ham o'qib tarjima qiladi!\n"
-        f"• 📥 <b>Tayyor Formatlar:</b> Yangi A4 PDF va tahrirlanadigan Word (.docx) faylini qaytaradi.\n\n"
-        f"Boshlash uchun shunchaki <b>PDF fayl</b> yuboring yoki <b>matn</b> yozing!"
+        f"🤖 <b>Universal Tarjima (Smart PDF, OCR va Matn) Botiga</b> xush kelibsiz!\n\n"
+        f"🔥 <b>Asosiy imkoniyatlar:</b>\n"
+        f"• 📄 <b>PDF Fayllar:</b> Oddiy elektron hamda <b>skaner qilingan / rasm formatdagi</b> PDF (tibbiy xulosalar, kitoblar) larni <b>100% OCR</b> orqali o'qish!\n"
+        f"• 💬 <b>Matnlar:</b> Chatga istalgan matn yozsangiz, darhol 5 ta asosiy tilga o'girib beradi!\n"
+        f"• 📸 <b>Hujjat Rasmlari:</b> Suratga olingan hujjatlarni o'qib tarjima qiladi!\n"
+        f"• 📥 <b>Tayyor Formatlar:</b> Yangi A4 PDF va tahrirlanadigan Word (.docx) faylini beradi.\n\n"
+        f"Boshlash uchun <b>PDF fayl</b> yuboring yoki <b>matn</b> yozing!"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=main_reply_keyboard())
 
@@ -546,11 +511,11 @@ def handle_help(message):
     help_text = (
         "ℹ️ <b>BOTDAN FOYDALANISH QO'LLANMASI:</b>\n\n"
         "1. <b>PDF Fayl yuborish:</b>\n"
-        "PDF faylingizni botga jo'nating. Bot sahifalarni o'qiydi va sizdan <b>«Qaysi tilga tarjima qilib beray?»</b> deb so'raydi. Kerakli til tugmasini bosing — bot tarjima qilib yangi PDF va Word (.docx) faylini beradi.\n\n"
+        "PDF faylingizni botga jo'nating. Bot sahifalarni o'qiydi va sizdan <b>«Qaysi tilga tarjima qilib beray?»</b> deb so'raydi. Kerakli til tugmasini bosing — yangi A4 PDF va Word (.docx) olasiz.\n\n"
         "2. <b>Matn yuborish:</b>\n"
-        "Chatga har qanday tildagi matnni yozib yuboring — bot darhol qaysi tilga tarjima qilishni so'raydi va tanlangan tilga o'girib beradi.\n\n"
+        "Chatga istalgan tildagi matnni yozib yuboring — bot qaysi tilga tarjima qilishni so'raydi va darhol o'girib beradi.\n\n"
         "3. <b>Skanerlangan / Rasmli PDF:</b>\n"
-        "Botda o'rnatilgan kuchli <b>Tesseract OCR</b> tizimi tufayli hatto skaner qilingan tibbiy analizlar va qog'oz kitoblar ham xatosiz o'qiladi!\n\n"
+        "Kuchli <b>Tesseract OCR</b> tizimi tufayli hatto qog'ozdan skaner qilingan tibbiy analizlar va kitoblar ham xatosiz o'qiladi!\n\n"
         "Administrator: @usman_khasan"
     )
     bot.send_message(message.chat.id, help_text)
@@ -569,6 +534,7 @@ def handle_stats(message):
     )
     bot.send_message(message.chat.id, text)
 
+@bot.message_handler(commands=["fayl", "pdf"])
 @bot.message_handler(func=lambda msg: msg.text == "📤 PDF / Hujjat yuborish")
 def handle_btn_pdf_prompt(message):
     bot.send_message(
@@ -577,6 +543,7 @@ def handle_btn_pdf_prompt(message):
         "<i>(Har qanday raqamli yoki skaner qilingan kitob, tibbiy xulosa, shartnoma qabul qilinadi)</i>"
     )
 
+@bot.message_handler(commands=["matn", "tarjima"])
 @bot.message_handler(func=lambda msg: msg.text == "💬 Matn tarjima qilish")
 def handle_btn_text_prompt(message):
     USER_STATES[message.from_user.id] = "wait_text"
@@ -617,7 +584,6 @@ def handle_incoming_document(message):
         with open(local_path, "wb") as f:
             f.write(downloaded)
 
-        # Sahifalar sonini aniqlash (pypdfium2 yordamida tezkor)
         try:
             pdf_doc = pypdfium2.PdfDocument(local_path)
             total_pages = len(pdf_doc)
@@ -635,7 +601,6 @@ def handle_incoming_document(message):
             "file_size_mb": file_size_mb
         }
 
-        # FOYDALANUVCHIDAN ASOSIY 5 TA TILDAN BIRINI SO'RASH:
         info_text = (
             f"📄 <b>Fayl muvaffaqiyatli qabul qilindi!</b>\n\n"
             f"📌 <b>Nomi:</b> <code>{html.escape(file_name)}</code>\n"
@@ -738,7 +703,7 @@ def handle_language_choice(call):
     lang_info = MAIN_LANGUAGES.get(target_lang, {"name": target_lang, "flag": "🌐"})
     target_name = f"{lang_info['flag']} {lang_info['name']}"
 
-    # 1. MATN TARJIMASI BO'LSA
+    # 1. MATN TARJIMASI
     if session["type"] == "text":
         prog_msg = bot.edit_message_text(
             f"⏳ <b>Matn tarjima qilinmoqda...</b>\n"
@@ -766,7 +731,7 @@ def handle_language_choice(call):
         threading.Thread(target=_text_worker, daemon=True).start()
         return
 
-    # 2. RASM TARJIMASI BO'LSA
+    # 2. RASM TARJIMASI
     if session["type"] == "photo":
         prog_msg = bot.edit_message_text(
             f"🔍 <b>Rasm OCR orqali o'qilmoqda...</b>\n"
@@ -787,7 +752,6 @@ def handle_language_choice(call):
                 bot.edit_message_text(f"🌐 <b>Matn o'qildi ({len(extracted)} belgi)! Tarjima qilinmoqda...</b>", call.message.chat.id, prog_msg.message_id)
                 translated = translate_full_text(extracted, target_lang=target_lang)
 
-                # Word fayl yaratish
                 pages_data = [{"page_num": 1, "is_ocr": True, "translated_text": translated}]
                 docx_path = os.path.join(TEMP_DIR, f"Tarjima_{session_id}_{target_lang}.docx")
                 create_translated_docx(pages_data, docx_path, "Hujjat_Rasmi.jpg", target_name)
@@ -823,7 +787,7 @@ def handle_language_choice(call):
         threading.Thread(target=_photo_worker, daemon=True).start()
         return
 
-    # 3. PDF HUJJAT TARJIMASI BO'LSA
+    # 3. PDF HUJJAT TARJIMASI
     if session["type"] == "pdf":
         prog_msg = bot.edit_message_text(
             f"⏳ <b>Tarjima jarayoni boshlanmoqda...</b>\n\n"
@@ -858,7 +822,6 @@ def handle_language_choice(call):
                         except Exception:
                             pass
 
-                # 1. Gibrid matn ajratish (Raqamli + OCR)
                 pages_data, was_ocr, count = extract_text_hybrid_pdf(
                     pdf_path,
                     max_pages=50,
@@ -874,7 +837,6 @@ def handle_language_choice(call):
                     )
                     return
 
-                # 2. Tarjima qilish
                 bot.edit_message_text(
                     f"🌐 <b>Matn muvaffaqiyatli ajratildi ({len(pages_data)} sahifa)!</b>\n"
                     f"Tahlil usuli: {'🔍 <b>Skaner / OCR</b>' if was_ocr else '⚡️ <b>Raqamli matn</b>'}\n\n"
@@ -894,7 +856,6 @@ def handle_language_choice(call):
                         "translated_text": trans_text
                     })
 
-                # 3. Yangi A4 PDF va Word DOCX yaratish
                 bot.edit_message_text(
                     "📑 <b>Tarjima yakunlandi! Yangi A4 PDF va Word hujjatlari shakllantirilmoqda...</b>",
                     call.message.chat.id,
@@ -923,17 +884,14 @@ def handle_language_choice(call):
 
                 bot.send_message(call.message.chat.id, caption)
 
-                # Word faylni yuborish
                 if has_docx and os.path.exists(docx_out):
                     with open(docx_out, "rb") as df:
                         bot.send_document(call.message.chat.id, df, caption=f"📝 {docx_name} (Tahrirlanadigan Word)")
 
-                # PDF faylni yuborish
                 if has_pdf and os.path.exists(pdf_out):
                     with open(pdf_out, "rb") as pf:
                         bot.send_document(call.message.chat.id, pf, caption=f"📄 {pdf_name} (A4 formatdagi tayyor PDF)")
 
-                # Agar qisqa bo'lsa (1-2 sahifa), chatga matnli parcha ham berish
                 first_text = translated_pages[0]["translated_text"][:800]
                 if first_text:
                     bot.send_message(call.message.chat.id, f"💬 <b>1-sahifadan qisqa parcha:</b>\n\n<i>\"{html.escape(first_text)}...\"</i>")
@@ -969,14 +927,36 @@ def handle_cancel_session(call):
     bot.answer_callback_query(call.id, "Amal bekor qilindi.")
     bot.edit_message_text("Amal bekor qilindi.", call.message.chat.id, call.message.message_id)
 
+# ==================== AVTOMATIK START VA TELEGRAM BUYRUQLARINI O'RNATISH ====================
+def setup_bot_commands():
+    """Bot ishga tushganda Telegram pastki chap burchagidagi ko'k 'Menu' tugmasi va /start ni avtomatik o'rnatish"""
+    try:
+        commands = [
+            types.BotCommand("start", "🚀 Botni ishga tushirish"),
+            types.BotCommand("fayl", "📤 PDF / Hujjat yuborish"),
+            types.BotCommand("matn", "💬 Matn tarjima qilish"),
+            types.BotCommand("stat", "📊 Bot statistikasi"),
+            types.BotCommand("help", "ℹ️ Yordam va qo'llanma")
+        ]
+        bot.set_my_commands(commands)
+        try:
+            bot.set_chat_menu_button(menu_button=types.MenuButtonCommands())
+        except Exception:
+            pass
+        print("✅ Telegram Menyu buyruqlari (/start 🚀) avtomatik o'rnatildi!")
+    except Exception as e:
+        logger.warning(f"Menyu komandalarini o'rnatishda ogohlantirish: {e}")
+
 # ==================== ISHGA TUSHIRISH ====================
 if __name__ == "__main__":
     print("=" * 65)
-    print("🤖 SMART PDF & MATN TARJIMON BOTI ISHGA TUSHMOQDA...")
+    print("🤖 UNIVERSAL TARJIMA BOTI ISHGA TUSHMOQDA...")
     print(f"🔑 Token: {BOT_TOKEN[:10]}...{BOT_TOKEN[-6:]}")
     print(f"👑 Admin ID: {ADMIN_ID}")
     print(f"🔍 OCR Tillari: {get_ocr_languages()}")
     print("=" * 65)
+
+    setup_bot_commands()
 
     while True:
         try:
