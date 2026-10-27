@@ -72,11 +72,13 @@ except ImportError:
     logger.warning("ReportLab kutubxonasi topilmadi. PDF rezyume matn ko'rinishida beriladi.")
 
 # ==================== ASOSIY SOZLAMALAR ====================
-DEFAULT_BOT_TOKEN = "SIZNING_BOT_TOKENINGIZ"
+DEFAULT_BOT_TOKEN = "8863390415:AAEj3E_H-Kv36OF9gb0pGJOXMvQd5KldSgQ"
 BOT_TOKEN = os.environ.get("BOT_TOKEN", DEFAULT_BOT_TOKEN).strip()
 
 # Bosh administrator Telegram ID (@usman_khasan)
 DEFAULT_ADMIN_ID = 1021089367
+ADMIN_USERNAME = "@usman_khasan"
+ADMIN_FIRST_NAME = "khasanov"
 try:
     ADMIN_ID = int(os.environ.get("ADMIN_ID", DEFAULT_ADMIN_ID))
 except ValueError:
