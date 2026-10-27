@@ -7,19 +7,6 @@
 Bosh administrator: @usman_khasan (ID: 1021089367)
 Bot Token: 8863390415:AAEj3E_H-Kv36OF9gb0pGJOXMvQd5KldSgQ
 Platforma: pyTelegramBotAPI (telebot) + SQLite3 + Pure-Python/ReportLab PDF Engine
-
-Asosiy imkoniyatlar:
- 1. 🔍 Ish qidiruvchilar uchun:
-    - 1 marta rezyume to'ldirish va 1 tugma bilan arizalar topshirish
-    - 📄 100% KAFOLATLANGAN A4 PDF REZYUME GENERATORI (Hech qanday modul cheklovisiz!)
-    - 🔔 AI Smart Match: Yangi mos vakansiya chiqqanda avtomatik xabarnoma
- 2. 🏢 Ish beruvchilar uchun:
-    - Tezkor va qulay vakansiya joylashtirish
-    - ✏️ VAKANSIYANI TAHRIRLASH TIZIMI: Maosh, tavsif, aloqa raqamini istalgan payt o'zgartirish
-    - ⏸ Vakansiyani to'xtatish (muzlatish) yoki o'chirish
-    - 👥 Kelgan rezyumelar va arizalarni bot ichida ko'rish
- 3. 📢 Kanal integratsiyasi va Admin boshqaruvi
-=============================================================================
 """
 
 import os
@@ -51,6 +38,8 @@ except ImportError:
             def answer_callback_query(self, *args, **kwargs): pass
             def delete_message(self, *args, **kwargs): pass
             def infinity_polling(self, *args, **kwargs): pass
+            def set_my_commands(self, *args, **kwargs): pass
+            def set_chat_menu_button(self, *args, **kwargs): pass
         class _MockTypes:
             class ReplyKeyboardMarkup:
                 def __init__(self, *args, **kwargs): pass
@@ -63,6 +52,10 @@ except ImportError:
             class InlineKeyboardButton:
                 def __init__(self, *args, **kwargs): pass
             class ReplyKeyboardRemove:
+                def __init__(self, *args, **kwargs): pass
+            class BotCommand:
+                def __init__(self, *args, **kwargs): pass
+            class MenuButtonCommands:
                 def __init__(self, *args, **kwargs): pass
         telebot = _MockTeleBot()
         telebot.TeleBot = _MockTeleBot
@@ -95,14 +88,12 @@ logger = logging.getLogger("JobBot")
 # ==================== ASOSIY SOZLAMALAR ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8863390415:AAEj3E_H-Kv36OF9gb0pGJOXMvQd5KldSgQ").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "1021089367"))
-CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "") # Masalan: "@ish_topish_kanali"
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# Ma'lumotlar bazasi fayli
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "job_bot.db")
 
-# Vaqtinchalik foydalanuvchi holatlari
 USER_STATES = {}
 EDIT_STATES = {}
 
@@ -120,11 +111,11 @@ def get_db():
         conn = sqlite3.connect(fallback_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Foydalanuvchilar jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -136,7 +127,6 @@ def init_db():
         )
     ''')
 
-    # Rezyumelar jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS resumes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,7 +143,6 @@ def init_db():
         )
     ''')
 
-    # Vakansiyalar jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS vacancies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,14 +156,13 @@ def init_db():
             phone TEXT,
             city TEXT,
             telegram TEXT,
-            status TEXT DEFAULT 'active', -- active, paused, closed
+            status TEXT DEFAULT 'active',
             channel_post_id INTEGER DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # Arizalar (Applications) jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS applications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,10 +195,6 @@ def _escape_pdf_text(text):
     return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
 
 def create_pure_python_pdf(resume_data):
-    """
-    Tizimda hech qanday kutubxona (ReportLab, C-libs) bo'lmaganda ham
-    100% sof Python bilan A4 PDF 1.4 hujjat yasaydi. Xatolik ehtimoli 0%!
-    """
     full_name = resume_data.get('full_name', 'Nomzod')
     profession = resume_data.get('profession', 'Mutaxassis')
     phone = resume_data.get('phone', "Mavjud emas")
@@ -221,15 +205,12 @@ def create_pure_python_pdf(resume_data):
     telegram = resume_data.get('telegram', '')
 
     stream = []
-    # Header box (Deep blue: #1E3A8A -> 0.118, 0.227, 0.541)
     stream.append('0.118 0.227 0.541 rg')
     stream.append('0 722 595 120 re f')
     
-    # Cyan accent line (Cyan: #06B6D4 -> 0.024, 0.714, 0.831)
     stream.append('0.024 0.714 0.831 rg')
     stream.append('0 717 595 5 re f')
 
-    # White header text
     stream.append('BT')
     stream.append('1 1 1 rg')
     stream.append('/F2 22 Tf')
@@ -242,20 +223,17 @@ def create_pure_python_pdf(resume_data):
     stream.append(f'40 755 Td ({_escape_pdf_text(profession.upper())}) Tj')
     stream.append('ET')
 
-    # Left sidebar / Contact info box (#F8FAFC)
     stream.append('0.97 0.98 0.99 rg')
     stream.append('35 40 180 650 re f')
     stream.append('0.88 0.91 0.94 RG 1 w')
     stream.append('35 40 180 650 re S')
 
-    # Contact Info Header
     stream.append('BT')
     stream.append('0.12 0.23 0.54 rg')
     stream.append('/F2 11 Tf')
     stream.append('48 660 Td (ALOQA MALUMOTLARI) Tj')
     stream.append('ET')
 
-    # Contact details
     contacts = [
         ('Telefon:', phone),
         ('Shahar:', city),
@@ -275,7 +253,6 @@ def create_pure_python_pdf(resume_data):
         stream.append('ET')
         y -= 36
 
-    # Skills section in sidebar
     stream.append('BT')
     stream.append('0.12 0.23 0.54 rg')
     stream.append('/F2 11 Tf')
@@ -294,7 +271,6 @@ def create_pure_python_pdf(resume_data):
         stream.append('ET')
         y -= 17
 
-    # Right Content Area (Experience & Professional Summary)
     stream.append('BT')
     stream.append('0.12 0.23 0.54 rg /F2 13 Tf')
     stream.append('235 660 Td (ISH TAJRIBASI VA MALAKA) Tj')
@@ -302,7 +278,6 @@ def create_pure_python_pdf(resume_data):
     stream.append('0.024 0.714 0.831 RG 2 w')
     stream.append('235 652 m 560 652 l S')
 
-    # Split experience into wrapped lines
     exp_words = experience.split()
     lines = []
     cur_line = []
@@ -326,7 +301,6 @@ def create_pure_python_pdf(resume_data):
         stream.append('ET')
         ey -= 16
 
-    # Bot verification stamp
     ey -= 25
     stream.append('BT')
     stream.append('0.12 0.23 0.54 rg /F2 12 Tf')
@@ -337,9 +311,9 @@ def create_pure_python_pdf(resume_data):
 
     ey -= 24
     verif_lines = [
-        "Ushbu rezyume @ish_topish_teambot orqali avtomatik tarzda shakllantirilgan.",
-        "Nomzodning telefon raqami va Telegram akkaunti tasdiqlangan.",
-        "Ish beruvchi bevosita ariza beruvchi bilan boglanishi mumkin."
+        "Ushbu rezyume @ish_topish_teambot orqali shakllantirilgan.",
+        "Nomzodning aloqa ma'lumotlari tasdiqlangan.",
+        "Ish beruvchi bevosita nomzod bilan boglanishi mumkin."
     ]
     for vl in verif_lines:
         stream.append('BT')
@@ -348,10 +322,9 @@ def create_pure_python_pdf(resume_data):
         stream.append('ET')
         ey -= 14
 
-    # Footer
     stream.append('BT')
     stream.append('0.55 0.55 0.55 rg /F1 8 Tf')
-    stream.append('235 50 Td (Yaratildi: @ish_topish_teambot | Telegram Professional Ish Platformasi) Tj')
+    stream.append('235 50 Td (Yaratildi: @ish_topish_teambot | Professional Ish Platformasi) Tj')
     stream.append('ET')
 
     content = '\n'.join(stream)
@@ -380,11 +353,6 @@ def create_pure_python_pdf(resume_data):
     return b'\n'.join(pdf)
 
 def generate_pro_pdf_resume(resume_data):
-    """
-    1-bosqich: Agar ReportLab bo'lsa, undan foydalanadi.
-    2-bosqich: ReportLab bo'lmasa yoki xato bersa, darhol pure-Python PDF generatoriga o'tadi.
-    NATIJA HAR DOIM 100% MUVAFFAQIShLI BO'LADI! HECH QACHON None QAYTMAYDI!
-    """
     if REPORTLAB_AVAILABLE:
         try:
             buffer = io.BytesIO()
@@ -448,7 +416,6 @@ def generate_pro_pdf_resume(resume_data):
             story.append(Spacer(1, 6))
             story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#06B6D4'), spaceAfter=12))
 
-            # Kontaktlar jadvali
             contact_data = [
                 [
                     Paragraph(f"<b>Telefon:</b> {phone}", body_style),
@@ -469,19 +436,16 @@ def generate_pro_pdf_resume(resume_data):
             story.append(t)
             story.append(Spacer(1, 12))
 
-            # Ko'nikmalar
             story.append(Paragraph("TEXNIK VA KASBIY KO'NIKMALAR", section_hdr))
             story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#CBD5E1'), spaceAfter=6))
             story.append(Paragraph(skills, body_style))
             story.append(Spacer(1, 10))
 
-            # Ish tajribasi
             story.append(Paragraph("ISH TAJRIBASI VA AMALIY MALAKA", section_hdr))
             story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#CBD5E1'), spaceAfter=6))
             story.append(Paragraph(experience.replace("\n", "<br/>"), body_style))
             story.append(Spacer(1, 16))
 
-            # Tasdiq
             story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor('#94A3B8'), spaceAfter=6))
             story.append(Paragraph("<i>Ushbu professional rezyume @ish_topish_teambot orqali shakllantirildi va tasdiqlandi.</i>", body_style))
 
@@ -489,9 +453,8 @@ def generate_pro_pdf_resume(resume_data):
             buffer.seek(0)
             return buffer
         except Exception as e:
-            logger.warning(f"ReportLab generatsiyasida xato, pure-Python generatoriga o'tilmoqda: {e}")
+            logger.warning(f"ReportLab xatosi, pure-Python generatoriga o'tilmoqda: {e}")
 
-    # Pure-Python Generator
     raw_pdf = create_pure_python_pdf(resume_data)
     buf = io.BytesIO(raw_pdf)
     buf.seek(0)
@@ -516,6 +479,12 @@ def handle_start(message):
     user_id = message.from_user.id
     username = message.from_user.username or ""
     full_name = message.from_user.full_name or "Foydalanuvchi"
+
+    # Telegram pastki chap burchagidagi ko'k "Menu" tugmasini faollashtirish:
+    try:
+        bot.set_chat_menu_button(message.chat.id, menu_button=types.MenuButtonCommands())
+    except Exception:
+        pass
 
     conn = get_db()
     c = conn.cursor()
@@ -542,6 +511,7 @@ def handle_start(message):
     bot.send_message(message.chat.id, welcome_text, reply_markup=main_menu_keyboard())
 
 # ==================== REZYUME YARATISH VA KO'RISH ====================
+@bot.message_handler(commands=['rezyume'])
 @bot.message_handler(func=lambda msg: msg.text == "📄 Mening Rezyumem")
 def handle_my_resume(message):
     user_id = message.from_user.id
@@ -619,6 +589,7 @@ def cb_download_pdf(call):
     )
 
 # ==================== VAKANSIYALARNI KO'RISH VA QIDIRISH ====================
+@bot.message_handler(commands=['vakansiyalar'])
 @bot.message_handler(func=lambda msg: msg.text == "🔍 Vakansiyalar qidirish")
 def handle_browse_vacancies(message):
     conn = get_db()
@@ -707,7 +678,6 @@ def cb_apply_vacancy(call):
         conn.close()
         return
 
-    # Arizani tekshirish
     c.execute("SELECT id FROM applications WHERE vacancy_id = ? AND seeker_id = ?", (vac_id, seeker_id))
     existing = c.fetchone()
     if existing:
@@ -715,7 +685,6 @@ def cb_apply_vacancy(call):
         conn.close()
         return
 
-    # Yangi ariza saqlash
     c.execute("INSERT INTO applications (vacancy_id, seeker_id, resume_id) VALUES (?, ?, ?)",
               (vac_id, seeker_id, resume['id']))
     conn.commit()
@@ -723,7 +692,6 @@ def cb_apply_vacancy(call):
 
     bot.answer_callback_query(call.id, "Arizangiz va rezyumengiz ish beruvchiga yuborildi! 🎉", show_alert=True)
 
-    # Ish beruvchiga zudlik bilan bildirishnoma va nomzod PDF rezyumesini yuborish
     try:
         employer_id = vac['employer_id']
         notif_text = (
@@ -750,6 +718,7 @@ def cb_apply_vacancy(call):
         logger.error(f"Ish beruvchiga arizani jo'natishda xato: {e}")
 
 # ==================== VAKANSIYANI TAHRIRLASH VA BOSHQARISH ====================
+@bot.message_handler(commands=['mening_ishlarim'])
 @bot.message_handler(func=lambda msg: msg.text == "📋 Mening vakansiyalarim")
 def handle_my_vacancies(message):
     user_id = message.from_user.id
@@ -829,7 +798,6 @@ def cb_toggle_vac(call):
         "Vakansiya vaqtincha to'xtatildi (qabul yopildi)." if new_status == "paused" else "Vakansiya qayta faollashtirildi!",
         show_alert=True
     )
-    # Qayta ko'rsatish
     handle_my_vacancies(call.message)
 
 # Vakansiyani o'chirish
@@ -892,6 +860,7 @@ def cb_view_apps(call):
         )
 
 # ==================== YANGI VAKANSIYA JOYLASH (WIZARD) ====================
+@bot.message_handler(commands=['elon_berish'])
 @bot.message_handler(func=lambda msg: msg.text == "📢 Ish e'lon qilish (Vakansiya)")
 def handle_post_vacancy(message):
     USER_STATES[message.from_user.id] = {"step": "vac_title", "data": {}}
@@ -1059,7 +1028,6 @@ def handle_wizard_input(message):
         vac_id = c.lastrowid
         conn.commit()
 
-        # Mos keluvchi nomzodlarni qidirish (AI Smart Match)
         c.execute("SELECT user_id, full_name, profession FROM resumes")
         all_resumes = c.fetchall()
         conn.close()
@@ -1073,7 +1041,6 @@ def handle_wizard_input(message):
             reply_markup=main_menu_keyboard()
         )
 
-        # Smart Match xabarnomasi: mutaxassislarga yangi vakansiya haqida xabar berish
         matched_count = 0
         vac_title_lower = vd['title'].lower()
         for res in all_resumes:
@@ -1098,19 +1065,41 @@ def handle_wizard_input(message):
             bot.send_message(message.chat.id, f"💡 <i>Smart Match: Sizning e'loningiz bazadagi mos keluvchi {matched_count} nafar mutaxassisga avtomatik yetkazildi!</i>")
 
 # ==================== YORDAM VA MA'LUMOT ====================
+@bot.message_handler(commands=['help'])
 @bot.message_handler(func=lambda msg: msg.text == "ℹ️ Yordam & Ma'lumot")
 def handle_help(message):
     help_text = (
         "ℹ️ <b>PLATFORMA BO'YICHA QO'LLANMA</b>\n\n"
         "1. <b>Qanday qilib rezyume yaratiladi?</b>\n"
-        "«📄 Mening Rezyumem» tugmasini bosing va bot bergan savollarga javob bering. Tugatgach, darhol <b>A4 formatdagi professional PDF</b> olasiz.\n\n"
+        "«📄 Mening Rezyumem» tugmasini bosing va savollarga javob bering. Tugatgach, darhol <b>A4 formatdagi professional PDF</b> olasiz.\n\n"
         "2. <b>Vakansiyaga ariza qanday beriladi?</b>\n"
-        "«🔍 Vakansiyalar qidirish» tugmasini bosing va ma'qul kelgan ish e'lonidagi <b>«📩 Rezyumem bilan ariza berish»</b> tugmasini bosing. Sizning ma'lumotlaringiz va PDF rezyumengiz to'g'ridan-to'g'ri ish beruvchiga yuboriladi.\n\n"
+        "«🔍 Vakansiyalar qidirish» tugmasini bosing va <b>«📩 Rezyumem bilan ariza berish»</b> tugmasini bosing. Sizning PDF rezyumengiz ish beruvchiga yuboriladi.\n\n"
         "3. <b>Ish beruvchilar uchun e'lonni tahrirlash:</b>\n"
         "«📋 Mening vakansiyalarim» bo'limi orqali maoshni yangilashingiz, talablarni o'zgartirishingiz, e'lonni to'xtatib qo'yishingiz yoki o'chirishingiz mumkin.\n\n"
         "Savol va takliflar uchun: @usman_khasan"
     )
     bot.send_message(message.chat.id, help_text, reply_markup=main_menu_keyboard())
+
+# ==================== AVTOMATIK START VA TELEGRAM BUYRUQLARINI O'RNATISH ====================
+def setup_bot_commands():
+    """Bot ishga tushganda Telegram pastki chap burchagidagi ko'k 'Menu' tugmasi va /start ni avtomatik o'rnatish"""
+    try:
+        commands = [
+            types.BotCommand("start", "🚀 Botni ishga tushirish"),
+            types.BotCommand("vakansiyalar", "🔍 Vakansiyalar qidirish"),
+            types.BotCommand("rezyume", "📄 Mening rezyumem (A4 PDF)"),
+            types.BotCommand("elon_berish", "📢 Ish e'lon qilish (Vakansiya)"),
+            types.BotCommand("mening_ishlarim", "📋 Mening vakansiyalarim"),
+            types.BotCommand("help", "ℹ️ Yordam & Ma'lumot")
+        ]
+        bot.set_my_commands(commands)
+        try:
+            bot.set_chat_menu_button(menu_button=types.MenuButtonCommands())
+        except Exception:
+            pass
+        print("✅ Telegram Menyu buyruqlari (/start 🚀) avtomatik o'rnatildi!")
+    except Exception as e:
+        logger.warning(f"Menyu komandalarini o'rnatishda ogohlantirish: {e}")
 
 # ==================== BOTNI ISHGA TUSHIRISH (POLLING) ====================
 if __name__ == "__main__":
@@ -1120,6 +1109,8 @@ if __name__ == "__main__":
     print(f"Bosh Administrator ID: {ADMIN_ID}")
     print(f"ReportLab holati: {'Faol' if REPORTLAB_AVAILABLE else 'O`rnatilmoqda (Pure-Python Failsafe 100% Faol)'}")
     print("=" * 60)
+
+    setup_bot_commands()
 
     while True:
         try:
