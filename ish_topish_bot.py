@@ -1,4 +1,3 @@
-```python
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -1677,11 +1676,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"⚠️ Telegramga ulanish ogohlantirishi: {e}")
 
-    # Polling orqali botni uzluksiz yurgizish
-    try:
-        bot.infinity_polling(timeout=25, long_polling_timeout=20)
-    except (KeyboardInterrupt, SystemExit):
-        print("\n🛑 Bot to'xtatildi.")
-    except Exception as e:
-        logger.critical(f"Botda to'xtovsiz xatolik: {e}")
-```
+    # Polling orqali botni 24/7 uzluksiz yurgizish (auto-reconnect)
+    print("🤖 Bot 24/7 uzluksiz polling rejimida ishga tushdi...")
+    import time
+    while True:
+        try:
+            bot.infinity_polling(timeout=35, long_polling_timeout=20, skip_pending=True)
+        except (KeyboardInterrupt, SystemExit):
+            print("\n🛑 Bot toxtatildi.")
+            break
+        except Exception as e:
+            logger.error(f"Polling xatosi (5 soniyada qayta ulanadi): {e}")
+            time.sleep(5)
