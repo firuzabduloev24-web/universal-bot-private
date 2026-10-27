@@ -1,4 +1,4 @@
-name: 24/7 PDF Tarjimon Bot Server
+name: 24/7 PDF & OCR Tarjimon Bot Server
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
   run-pdf-translator-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Reponi yuklab olish
+      - name: Repozitoriyni yuklab olish
         uses: actions/checkout@v4
 
       - name: Python 3.11 ni sozlash
@@ -19,12 +19,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Kutubxonalarni o'rnatish
+      - name: Tesseract OCR va Tizim modullarini o'rnatish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng tesseract-ocr-uzb poppler-utils
+
+      - name: Python Kutubxonalarini o'rnatish
         run: |
           python -m pip install --upgrade pip
-          pip install pyTelegramBotAPI pypdf reportlab python-docx requests
+          pip install pyTelegramBotAPI pypdf pypdfium2 pytesseract Pillow python-docx reportlab deep-translator requests
 
-      - name: PDF Tarjimon Botini ishga tushirish
+      - name: PDF & OCR Tarjimon Botini 24/7 ishga tushirish
         env:
           BOT_TOKEN: 8925389899:AAFL5NzM5bIu0eK8yVNCi_Fpj-QNPKL7J5c
           ADMIN_ID: 1021089367
