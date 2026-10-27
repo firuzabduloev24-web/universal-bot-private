@@ -1,1 +1,6 @@
-pyTelegramBotAPI, yt-dlp, requests, flask
+pyTelegramBotAPI>=4.15.0
+reportlab>=4.0.0
+requests>=2.31.0
+Pillow>=10.0.0
+yt-dlp
+instagrapi
