@@ -1,3 +1,4 @@
+```python
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -83,8 +84,25 @@ try:
 except ValueError:
     ADMIN_ID = DEFAULT_ADMIN_ID
 
+def is_admin(user: Any) -> bool:
+    """Foydalanuvchining bosh administrator ekanligini aniq tekshiradi."""
+    if not user:
+        return False
+    u_id = getattr(user, 'id', None)
+    if u_id is None and isinstance(user, int):
+        u_id = user
+    if u_id in [ADMIN_ID, DEFAULT_ADMIN_ID, 1021089367]:
+        return True
+    uname = str(getattr(user, 'username', '') or '').lower().lstrip('@')
+    fname = str(getattr(user, 'first_name', '') or '').lower()
+    if uname in ['usman_khasan', 'khasanov'] or 'usman_khasan' in uname:
+        return True
+    if fname in ['khasanov', 'usman']:
+        return True
+    return False
+
 # Asosiy rasmiy bot username
-PRIMARY_BOT_USERNAME = "universal_IshTop"
+PRIMARY_BOT_USERNAME = "ish_topish_teambot"
 
 # Zaxira kanal username (agar bazada bo'lmasa)
 DEFAULT_CHANNEL = os.environ.get("CHANNEL_USERNAME", "").strip()
@@ -375,6 +393,53 @@ def post_vacancy_to_channel(vac_id: int) -> Tuple[bool, str, str, str]:
         return False, "", str(channel_target), str(e)
 
 
+
+def update_vacancy_channel_post(vac_id: int):
+    """Kanalga chiqarilgan vakansiya postini yangilangan ma'lumotlar bilan tahrirlash."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM vacancies WHERE id = ?", (vac_id,))
+        vac = cur.fetchone()
+        conn.close()
+
+        if not vac:
+            return
+
+        ch_post_id = vac["channel_post_id"]
+        ch_target = vac["channel_target"] or get_channel_target()
+        if not ch_post_id or not ch_target:
+            return
+
+        bot_username = get_bot_username()
+        post_text, markup = format_vacancy_channel_post(vac, bot_username)
+
+        if vac["status"] != "active":
+            post_text = "🔴 <b>[Ushbu vakansiya bo'yicha qabul yopilgan yoki to'xtatilgan]</b>\n\n" + post_text
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(types.InlineKeyboardButton("🤖 Barcha yangi vakansiyalar boti", url=f"https://t.me/{bot_username}"))
+
+        bot.edit_message_text(
+            chat_id=ch_target,
+            message_id=ch_post_id,
+            text=post_text,
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
+        logger.info(f"Kanal posti (#{ch_post_id}) muvaffaqiyatli yangilandi.")
+    except Exception as e:
+        logger.warning(f"Kanal postini yangilashda ogohlantirish: {e}")
+
+def delete_vacancy_channel_post(channel_target: str, post_id: int):
+    """Agar imkon bo'lsa, o'chirilgan vakansiyaning kanal postini ham tozalaydi."""
+    try:
+        if channel_target and post_id:
+            bot.delete_message(chat_id=channel_target, message_id=post_id)
+            logger.info(f"Kanal posti o'chirildi: {channel_target} / {post_id}")
+    except Exception as e:
+        logger.warning(f"Kanal postini o'chirishda ogohlantirish: {e}")
+
+
 # ==================== SMART MATCH (MOS XODIMLARGA BILDIRISHNOMA) ====================
 def notify_matched_seekers(vac_id: int):
     """Yangi vakansiyaga mos keladigan ish qidiruvchilarga bot ichida xabar beradi."""
@@ -531,20 +596,21 @@ def generate_resume_pdf(resume: sqlite3.Row) -> Optional[io.BytesIO]:
 
 # ==================== ASOSIY MENYU VA TUGMALAR ====================
 def main_reply_keyboard(role: str = "seeker") -> types.ReplyKeyboardMarkup:
-    """Asosiy pastki klaviatura."""
+    """Asosiy pastki klaviatura: Ham ish beruvchi, ham ish qidiruvchi uchun hamma asosiy tugmalar ochiq."""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    if role == "employer":
-        markup.add("➕ Vakansiya joylash", "📋 Mening vakansiyalarim")
-        markup.add("📥 Kelgan arizalar", "🔍 Ish qidiruvchi rejimiga o'tish")
-        markup.add("ℹ️ Bot haqida", "📞 Yordam")
-    else:
-        markup.add("🔍 Ish izlash (Vakansiyalar)", "📄 Mening rezyumem")
-        markup.add("📑 Mening arizalarim", "🏢 Ish beruvchi rejimiga o'tish")
-        markup.add("ℹ️ Bot haqida", "📞 Yordam")
+    markup.add("➕ Vakansiya joylash", "🔍 Ish izlash (Vakansiyalar)")
+    markup.add("📄 Mening rezyumem", "📋 Mening vakansiyalarim")
+    markup.add("📥 Kelgan arizalar", "📑 Mening arizalarim")
+    markup.add("ℹ️ Bot haqida", "📞 Yordam")
     return markup
 
 
 # ==================== /start BUYRUG'I VA DEEP LINKING ====================
+@bot.message_handler(commands=["vakansiya", "elon", "job", "post_job"])
+def handle_cmd_vacancy(message: types.Message):
+    register_or_update_user(message.from_user, "employer")
+    start_vacancy_wizard(message.chat.id, message.from_user.id)
+
 @bot.message_handler(commands=["start"])
 def handle_start(message: types.Message):
     user = message.from_user
@@ -654,7 +720,7 @@ def show_vacancy_card(chat_id: int, vac: sqlite3.Row, show_apply_btn: bool = Tru
 # ==================== ADMIN BUYRUQLARI ====================
 @bot.message_handler(commands=["admin"])
 def handle_admin(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if not is_admin(message.from_user):
         bot.send_message(message.chat.id, "⛔️ Ushbu bo'lim faqat bosh administrator uchun.")
         return
 
@@ -696,7 +762,7 @@ def handle_admin(message: types.Message):
 
 @bot.message_handler(commands=["set_channel"])
 def handle_set_channel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if not is_admin(message.from_user):
         bot.send_message(message.chat.id, "⛔️ Ushbu buyruq faqat bosh administrator uchun.")
         return
 
@@ -789,7 +855,7 @@ def handle_check_channel(message: types.Message):
 
 @bot.message_handler(commands=["broadcast"])
 def handle_broadcast(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if not is_admin(message.from_user):
         return
 
     args = message.text.split(maxsplit=1)
@@ -1265,6 +1331,18 @@ def process_application(chat_id: int, seeker_id: int, vac_id: int):
 
 
 # ==================== MATNLI XABARLARNI QABUL QILISH ====================
+
+@bot.message_handler(commands=["cancel"])
+def handle_cancel_cmd(message: types.Message):
+    user_id = message.from_user.id
+    if user_id in USER_STATES:
+        state = USER_STATES.pop(user_id, None)
+        bot.send_message(message.chat.id, "❌ Joriy jarayon bekor qilindi.", reply_markup=main_reply_keyboard("employer"))
+        if state and state.get("flow") == "edit_vac" and state.get("vac_id"):
+            show_employer_vacancy_manage(message.chat.id, user_id, state["vac_id"])
+    else:
+        bot.send_message(message.chat.id, "Hozirda hech qanday faol jarayon yo'q.", reply_markup=main_reply_keyboard("employer"))
+
 @bot.message_handler(func=lambda msg: True, content_types=["text", "contact"])
 def handle_all_messages(message: types.Message):
     user_id = message.from_user.id
@@ -1278,6 +1356,9 @@ def handle_all_messages(message: types.Message):
             return
         elif state.get("flow") == "resume":
             handle_resume_step(message, state)
+            return
+        elif state.get("flow") == "edit_vac":
+            handle_edit_vac_step(message, state)
             return
 
     # Reply klaviatura tugmalari
@@ -1343,7 +1424,7 @@ def handle_all_messages(message: types.Message):
 
 
 # ==================== FOYDALANUVCHI BO'LIMLARI ====================
-def show_my_vacancies(chat_id: int, employer_id: int):
+def show_my_vacancies(chat_id: int, employer_id: int, message_id: Optional[int] = None):
     """Ish beruvchining o'z vakansiyalari ro'yxatini ko'rsatadi."""
     conn = get_db_connection()
     cur = conn.cursor()
@@ -1354,24 +1435,196 @@ def show_my_vacancies(chat_id: int, employer_id: int):
     if not rows:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("➕ Birinchi vakansiyani joylash", callback_data="btn_add_vac"))
-        bot.send_message(
-            chat_id,
-            "📭 <b>Siz hali hech qanday vakansiya joylamagansiz.</b>\n\nYangi ish o'rni e'lon qilish uchun pastdagi tugmani bosing:",
-            reply_markup=markup,
-            parse_mode="HTML"
-        )
+        msg_text = "📭 <b>Siz hali hech qanday vakansiya joylamagansiz.</b>\n\nYangi ish o'rni e'lon qilish uchun pastdagi tugmani bosing:"
+        if message_id:
+            try:
+                bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="HTML")
+                return
+            except Exception:
+                pass
+        bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
         return
 
-    text = f"📋 <b>SIZNING VAKANSIYALARINGIZ ({len(rows)} ta):</b>\n\n"
+    text = f"📋 <b>SIZNING VAKANSIYALARINGIZ ({len(rows)} ta):</b>\n\nBatafsil ko'rish, tahrirlash yoki o'chirish uchun kerakli vakansiyani tanlang:\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
 
-    for vac in rows[:10]:
+    for vac in rows[:15]:
         status_icon = "🟢 Faol" if vac["status"] == "active" else "🔴 Yopilgan"
         btn_text = f"{vac['title']} ({vac['company']}) — {status_icon}"
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"view_my_vac_{vac['id']}"))
 
     markup.add(types.InlineKeyboardButton("➕ Yangi vakansiya qo'shish", callback_data="btn_add_vac"))
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="HTML")
+            return
+        except Exception:
+            pass
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+
+def show_employer_vacancy_manage(chat_id: int, user_id: int, vac_id: int, message_id: Optional[int] = None):
+    """Ish beruvchining o'z vakansiyasini to'liq ko'rish, tahrirlash, holatini o'zgartirish va o'chirish kartasi."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM vacancies WHERE id = ?", (vac_id,))
+    vac = cur.fetchone()
+
+    if not vac:
+        conn.close()
+        bot.send_message(chat_id, "⚠️ <b>Vakansiya topilmadi yoki o'chirilgan.</b>", parse_mode="HTML")
+        return
+
+    cur.execute("SELECT count(*) FROM applications WHERE vacancy_id = ?", (vac_id,))
+    app_cnt = cur.fetchone()[0]
+    conn.close()
+
+    # Huquqni tekshirish: faqat egasi yoki admin
+    if vac["employer_id"] != user_id and not is_admin(user_id):
+        bot.send_message(chat_id, "⛔️ Siz faqat o'zingiz joylagan vakansiyalarni boshqarishingiz mumkin.")
+        return
+
+    title = html.escape(str(vac["title"] or "Noma'lum"))
+    company = html.escape(str(vac["company"] or "Noma'lum"))
+    category = html.escape(str(vac["category"] or "Umumiy"))
+    salary = html.escape(str(vac["salary"] or "Kelishilgan"))
+    city = html.escape(str(vac["city"] or "O'zbekiston"))
+    requirements = html.escape(str(vac["requirements"] or "Mavjud emas"))
+    description = html.escape(str(vac["description"] or "Mavjud emas"))
+    phone = html.escape(str(vac["phone"] or "Mavjud emas"))
+    telegram = str(vac["telegram"] or "").strip().lstrip("@")
+    tg_display = f"@{telegram}" if telegram else "Mavjud emas"
+
+    is_active = (vac["status"] == "active")
+    status_icon = "🟢 Faol (Qidiruvda va kanalda ochiq)" if is_active else "🔴 To'xtatilgan / Yopilgan"
+    toggle_title = "⏸ E'lonni to'xtatish" if is_active else "▶️ E'lonni faollashtirish"
+
+    card_text = (
+        f"📋 <b>VAKANSIYANGIZ TAFSILOTLARI (№{vac_id})</b>\n\n"
+        f"💼 <b>Lavozim:</b> <b>{title}</b>\n"
+        f"🏢 <b>Kompaniya:</b> {company}\n"
+        f"🏷 <b>Yo'nalish:</b> {category}\n"
+        f"📍 <b>Hudud:</b> {city}\n"
+        f"💰 <b>Maosh:</b> <b>{salary}</b>\n\n"
+        f"📋 <b>Talablar:</b>\n{requirements}\n\n"
+        f"📝 <b>Sharoitlar va tavsif:</b>\n{description}\n\n"
+        f"📞 <b>Aloqa telefoni:</b> {phone}\n"
+        f"👤 <b>Telegram:</b> {tg_display}\n\n"
+        f"📊 <b>Holati:</b> {status_icon}\n"
+        f"📥 <b>Kelgan arizalar:</b> <b>{app_cnt} ta</b>\n"
+    )
+
+    ch_post_id = vac["channel_post_id"]
+    ch_target = vac["channel_target"] or get_channel_target()
+    if ch_post_id and ch_target:
+        clean_target = str(ch_target).lstrip("@")
+        card_text += f"\n📢 <b>Kanal posti:</b> <a href=\"https://t.me/{clean_target}/{ch_post_id}\">Kanalda ko'rish ↗️</a>\n"
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✏️ Tahrirlash / O'zgartirish", callback_data=f"edit_vac_{vac_id}"),
+        types.InlineKeyboardButton(f"{toggle_title}", callback_data=f"toggle_vac_{vac_id}")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🗑 Vakansiyani o'chirish", callback_data=f"ask_del_vac_{vac_id}")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🔙 Vakansiyalarim ro'yxatiga", callback_data="my_vacancies")
+    )
+
+    if message_id:
+        try:
+            bot.edit_message_text(card_text, chat_id, message_id, reply_markup=markup, parse_mode="HTML")
+            return
+        except Exception:
+            pass
+
+    bot.send_message(chat_id, card_text, reply_markup=markup, parse_mode="HTML")
+
+
+def show_edit_fields_menu(chat_id: int, vac_id: int, message_id: Optional[int] = None):
+    """Qaysi maydonni tahrirlashni tanlash menyusi."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM vacancies WHERE id = ?", (vac_id,))
+    vac = cur.fetchone()
+    conn.close()
+
+    if not vac:
+        bot.send_message(chat_id, "⚠️ Vakansiya topilmadi.")
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("💼 Lavozim nomi", callback_data=f"edf_title_{vac_id}"),
+        types.InlineKeyboardButton("💰 Maosh miqdori", callback_data=f"edf_salary_{vac_id}"),
+        types.InlineKeyboardButton("📍 Shahar / Hudud", callback_data=f"edf_city_{vac_id}"),
+        types.InlineKeyboardButton("📋 Nomzodga talablar", callback_data=f"edf_requirements_{vac_id}"),
+        types.InlineKeyboardButton("📝 Ish tavsifi", callback_data=f"edf_description_{vac_id}"),
+        types.InlineKeyboardButton("📞 Telefon raqam", callback_data=f"edf_phone_{vac_id}")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🔙 Orqaga (Vakansiyaga)", callback_data=f"view_my_vac_{vac_id}")
+    )
+
+    text = (
+        f"✏️ <b>VAKANSIYANI TAHRIRLASH: «{html.escape(str(vac['title']))}»</b>\n\n"
+        f"Qaysi ma'lumotni o'zgartirmoqchisiz? Quyidagi bo'limlardan birini tanlang:"
+    )
+
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="HTML")
+            return
+        except Exception:
+            pass
+
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+
+def handle_edit_vac_step(message: types.Message, state: Dict[str, Any]):
+    """Vakansiya maydonini tahrirlash jarayoni."""
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    text = (message.text or "").strip()
+
+    vac_id = state.get("vac_id")
+    field = state.get("field")
+    label = state.get("label", "Ma'lumot")
+
+    if text in ["/cancel", "❌ Bekor qilish"]:
+        USER_STATES.pop(user_id, None)
+        bot.send_message(chat_id, "❌ Tahrirlash bekor qilindi.", reply_markup=main_reply_keyboard("employer"))
+        if vac_id:
+            show_employer_vacancy_manage(chat_id, user_id, vac_id)
+        return
+
+    if not text:
+        bot.send_message(chat_id, "Iltimos, yangi ma'lumotni matn ko'rinishida yuboring:")
+        return
+
+    if field == "phone" and not re.search(r"\d{7,}", text):
+        bot.send_message(chat_id, "⚠️ Iltimos, to'g'ri telefon raqam kiriting (masalan: +998901234567):")
+        return
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE vacancies SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (text, vac_id))
+    conn.commit()
+    conn.close()
+
+    USER_STATES.pop(user_id, None)
+
+    # Agar kanalga chiqarilgan bo'lsa, kanal postini ham yangilashga harakat qilamiz
+    update_vacancy_channel_post(vac_id)
+
+    bot.send_message(
+        chat_id,
+        f"✅ <b>{label} muvaffaqiyatli o'zgartirildi!</b>",
+        reply_markup=main_reply_keyboard("employer"),
+        parse_mode="HTML"
+    )
+    show_employer_vacancy_manage(chat_id, user_id, vac_id)
 
 
 def show_vacancies_list(chat_id: int):
@@ -1542,9 +1795,179 @@ def handle_callbacks(call: types.CallbackQuery):
             bot.answer_callback_query(call.id)
             show_vacancies_list(chat_id)
 
+
         elif data == "my_vacancies":
             bot.answer_callback_query(call.id)
-            show_my_vacancies(chat_id, user_id)
+            show_my_vacancies(chat_id, user_id, message_id=call.message.message_id)
+
+        # O'z vakansiyasini ko'rish va boshqarish
+        elif data.startswith("view_my_vac_"):
+            vac_id = int(data.split("_")[-1])
+            bot.answer_callback_query(call.id)
+            show_employer_vacancy_manage(chat_id, user_id, vac_id, message_id=call.message.message_id)
+
+        # Holatni o'zgartirish (Faol <-> Yopilgan)
+        elif data.startswith("toggle_vac_"):
+            vac_id = int(data.split("_")[-1])
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT status, employer_id, title FROM vacancies WHERE id = ?", (vac_id,))
+            row = cur.fetchone()
+
+            if not row:
+                conn.close()
+                bot.answer_callback_query(call.id, "Vakansiya topilmadi!", show_alert=True)
+                return
+
+            if row["employer_id"] != user_id and not is_admin(call.from_user):
+                conn.close()
+                bot.answer_callback_query(call.id, "Ruxsat berilmagan!", show_alert=True)
+                return
+
+            new_status = "closed" if row["status"] == "active" else "active"
+            cur.execute("UPDATE vacancies SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_status, vac_id))
+            conn.commit()
+            conn.close()
+
+            update_vacancy_channel_post(vac_id)
+
+            status_alert = "🟢 Vakansiya faollashtirildi!" if new_status == "active" else "⏸ Vakansiya to'xtatildi (yopildi)!"
+            bot.answer_callback_query(call.id, status_alert, show_alert=True)
+            show_employer_vacancy_manage(chat_id, user_id, vac_id, message_id=call.message.message_id)
+
+        # Tahrirlash bo'limlari menyusi
+        elif data.startswith("edit_vac_"):
+            vac_id = int(data.split("_")[-1])
+            bot.answer_callback_query(call.id)
+            show_edit_fields_menu(chat_id, vac_id, message_id=call.message.message_id)
+
+        # Tahrirlanadigan aniq maydonni tanlash
+        elif data.startswith("edf_"):
+            parts = data.split("_")
+            vac_id = int(parts[-1])
+            field = "_".join(parts[1:-1])
+
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM vacancies WHERE id = ?", (vac_id,))
+            vac = cur.fetchone()
+            conn.close()
+
+            if not vac:
+                bot.answer_callback_query(call.id, "Vakansiya topilmadi!", show_alert=True)
+                return
+
+            if vac["employer_id"] != user_id and not is_admin(call.from_user):
+                bot.answer_callback_query(call.id, "Ruxsat berilmagan!", show_alert=True)
+                return
+
+            field_labels = {
+                "title": ("💼 Lavozim nomi", "Misol: Senior Python Backend Dasturchi"),
+                "salary": ("💰 Maosh miqdori", "Misol: 8,000,000 - 12,000,000 so'm yoki Kelishilgan"),
+                "city": ("📍 Shahar / Hudud", "Misol: Toshkent shahri, Yunusobod tumani"),
+                "requirements": ("📋 Nomzodga talablar", "Nomzoddan talab qilinadigan bilim, tajriba va texnologiyalar"),
+                "description": ("📝 Ish tavsifi va sharoitlar", "Ish vazifalari, qulayliklar, ish vaqti va bonuslar"),
+                "phone": ("📞 Telefon raqam", "Misol: +998901234567")
+            }
+
+            label, hint = field_labels.get(field, (field, "Yangi qiymatni kiriting"))
+            curr_val = html.escape(str(vac[field] or "Kiritilmagan"))
+
+            USER_STATES[user_id] = {
+                "flow": "edit_vac",
+                "vac_id": vac_id,
+                "field": field,
+                "label": label
+            }
+
+            bot.answer_callback_query(call.id)
+            cancel_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            cancel_markup.add("❌ Bekor qilish")
+
+            prompt_text = (
+                f"✏️ <b>{label} bo'limini o'zgartirish</b>\n\n"
+                f"📌 <b>Hozirgi ma'lumot:</b>\n<i>{curr_val}</i>\n\n"
+                f"✍️ <b>Yangi qiymatni yozib yuboring:</b>\n"
+                f"💡 <i>{hint}</i>\n\n"
+                f"❌ <i>Bekor qilish uchun /cancel deb yozing yoki «❌ Bekor qilish» tugmasini bosing.</i>"
+            )
+            bot.send_message(chat_id, prompt_text, reply_markup=cancel_markup, parse_mode="HTML")
+
+        # O'chirishni so'rash
+        elif data.startswith("ask_del_vac_"):
+            vac_id = int(data.split("_")[-1])
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT title, employer_id FROM vacancies WHERE id = ?", (vac_id,))
+            row = cur.fetchone()
+            conn.close()
+
+            if not row:
+                bot.answer_callback_query(call.id, "Vakansiya topilmadi!", show_alert=True)
+                return
+
+            if row["employer_id"] != user_id and not is_admin(call.from_user):
+                bot.answer_callback_query(call.id, "Ruxsat berilmagan!", show_alert=True)
+                return
+
+            bot.answer_callback_query(call.id)
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("🗑 Ha, o'chirilsin", callback_data=f"confirm_del_vac_{vac_id}"),
+                types.InlineKeyboardButton("🔙 Yo'q, bekor qilish", callback_data=f"view_my_vac_{vac_id}")
+            )
+            confirm_text = (
+                f"⚠️ <b>DIQQAT! VAKANSIYANI O'CHIRISH:</b>\n\n"
+                f"Rostdan ham «<b>{html.escape(row['title'])}</b>» vakansiyasini o'chirib tashlamoqchimisiz?\n\n"
+                f"❗️ <i>Ushbu amalni ortga qaytarib bo'lmaydi va ushbu vakansiyaga kelgan barcha arizalar ham o'chiriladi.</i>"
+            )
+            bot.edit_message_text(confirm_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
+        # O'chirishni ijro etish
+        elif data.startswith("confirm_del_vac_"):
+            vac_id = int(data.split("_")[-1])
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT title, employer_id, channel_post_id, channel_target FROM vacancies WHERE id = ?", (vac_id,))
+            row = cur.fetchone()
+
+            if not row:
+                conn.close()
+                bot.answer_callback_query(call.id, "Vakansiya topilmadi!", show_alert=True)
+                return
+
+            if row["employer_id"] != user_id and not is_admin(call.from_user):
+                conn.close()
+                bot.answer_callback_query(call.id, "Ruxsat berilmagan!", show_alert=True)
+                return
+
+            ch_post_id = row["channel_post_id"]
+            ch_target = row["channel_target"]
+
+            # Arizalarni va vakansiyani o'chirish
+            cur.execute("DELETE FROM applications WHERE vacancy_id = ?", (vac_id,))
+            cur.execute("DELETE FROM vacancies WHERE id = ?", (vac_id,))
+            conn.commit()
+            conn.close()
+
+            # Kanal postini tozalash
+            if ch_post_id and ch_target:
+                delete_vacancy_channel_post(ch_target, ch_post_id)
+
+            bot.answer_callback_query(call.id, "Vakansiya muvaffaqiyatli o'chirildi ✅", show_alert=True)
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("📋 Mening vakansiyalarim", callback_data="my_vacancies"),
+                types.InlineKeyboardButton("➕ Yangi vakansiya joylash", callback_data="btn_add_vac")
+            )
+            bot.edit_message_text(
+                f"🗑 «<b>{html.escape(row['title'])}</b>» vakansiyasi muvaffaqiyatli o'chirildi.",
+                chat_id,
+                call.message.message_id,
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+
 
         # Vakansiya tafsilotlarini ko'rish
         elif data.startswith("vac_details_"):
@@ -1688,3 +2111,4 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Polling xatosi (5 soniyada qayta ulanadi): {e}")
             time.sleep(5)
+```
